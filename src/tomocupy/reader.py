@@ -116,6 +116,7 @@ class Reader():
         id_dtype - input data type (e.g. uint8), or reconstruction type (if binning>0)
         '''
 
+        item = {}
         with h5py.File(self.args.file_name) as fid:
             if isinstance(ids_proj, np.ndarray):
                 data = fid['/exchange/data'][ids_proj, st_z:end_z,
@@ -123,19 +124,18 @@ class Reader():
             else:
                 data = fid['/exchange/data'][ids_proj[0]:ids_proj[1],
                                              st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
-                                             
+            item['data'] = utils.downsample(data, self.args.binning)
+            item['flat'] = utils.downsample(data_flat, self.args.binning)                                             
+            item['id'] = id_z
+            data_queue.put(item)
 
         with h5py.File(self.args.flat_field_file_name) as fid:
             data_flat = fid['/exchange/data_white'][:,
                                                     st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
             data_dark = fid['/exchange/data_dark'][:,
                                                    st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
-
-            item = {}
-            item['data'] = utils.downsample(data, self.args.binning)
             item['flat'] = utils.downsample(data_flat, self.args.binning)
             item['dark'] = utils.downsample(data_dark, self.args.binning)
-            item['id'] = id_z
             data_queue.put(item)
 
     def read_proj_chunk(self, data, st_proj, end_proj, st_z, end_z, st_n, end_n):
