@@ -124,8 +124,7 @@ class Reader():
             else:
                 data = fid['/exchange/data'][ids_proj[0]:ids_proj[1],
                                              st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
-            item['data'] = utils.downsample(data, self.args.binning)
-            item['flat'] = utils.downsample(data_flat, self.args.binning)                                             
+            item['data'] = utils.downsample(data, self.args.binning)                                            
             item['id'] = id_z
             data_queue.put(item)
 
@@ -137,6 +136,7 @@ class Reader():
             item['flat'] = utils.downsample(data_flat, self.args.binning)
             item['dark'] = utils.downsample(data_dark, self.args.binning)
             data_queue.put(item)
+        print(item.keys())
 
     def read_proj_chunk(self, data, st_proj, end_proj, st_z, end_z, st_n, end_n):
         """Read a chunk of projections with binning"""
