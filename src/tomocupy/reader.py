@@ -58,12 +58,21 @@ class Reader():
 
     def __init__(self, args):
         self.args = args
+        
+        if self.args.dark_file_name == None:
+            self.args.dark_file_name = self.args.file_name
+        else:
+            log.warning(f'Using dark fields from {self.args.dark_file_name}')
+
+        if self.args.flat_file_name == None:
+            self.args.flat_file_name = self.args.file_name
+        else:
+            log.warning(f'Using flat fields from {self.args.flat_file_name}')
 
     def read_sizes(self):
         '''
         Read data sizes        
         Output: dictionary with fields
-
         nproji - number of projections
         nzi - detector height
         ni - detector width
@@ -82,15 +91,16 @@ class Reader():
             sizes['nzi'] = nzi
             sizes['ni'] = ni
 
-        with h5py.File(self.args.flat_field_file_name) as file_in:
-            dark = file_in['/exchange/data_dark']
+        with h5py.File(self.args.flat_file_name) as file_in:
             flat = file_in['/exchange/data_white']
-            ndark = dark.shape[0]
             nflat = flat.shape[0]
-
-            sizes['ndark'] = ndark
             sizes['nflat'] = nflat
-            
+
+        with h5py.File(self.args.dark_file_name) as file_in:
+            dark = file_in['/exchange/data_dark']
+            ndark = dark.shape[0]
+            sizes['ndark'] = ndark
+
         return sizes
 
     def read_theta(self):
@@ -105,7 +115,6 @@ class Reader():
         '''
         Read a data chunk (proj, flat,dark) from the storage to a python queue, with downsampling
         Input:
-
         data_queue - a python queue for synchronous read/writes
         ids_proj - the first and last projection ids for reconstruction (e.g, (0,1500)), or np.array with ids (if some angles are blocked and should be ignored),
         st_z - start row in z
@@ -116,27 +125,32 @@ class Reader():
         id_dtype - input data type (e.g. uint8), or reconstruction type (if binning>0)
         '''
 
-        item = {}
         with h5py.File(self.args.file_name) as fid:
             if isinstance(ids_proj, np.ndarray):
-                data = fid['/exchange/data'][ids_proj, st_z:end_z,
-                                             st_n:end_n].astype(in_dtype, copy=False)
+                #data = fid['/exchange/data'][ids_proj, st_z:end_z,
+                #                             st_n:end_n].astype(in_dtype, copy=False)
+                data = fid['/exchange/data'][:, st_z:end_z,
+                                             st_n:end_n][ids_proj].astype(in_dtype, copy=False) 
             else:
                 data = fid['/exchange/data'][ids_proj[0]:ids_proj[1],
                                              st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
-            item['data'] = utils.downsample(data, self.args.binning)                                            
-            item['id'] = id_z
-            data_queue.put(item)
+                                             
 
-        with h5py.File(self.args.flat_field_file_name) as fid:
-            data_flat = fid['/exchange/data_white'][:,
-                                                    st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
+        with h5py.File(self.args.dark_file_name) as fid:
             data_dark = fid['/exchange/data_dark'][:,
                                                    st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
+
+
+        with h5py.File(self.args.flat_file_name) as fid:
+            data_flat = fid['/exchange/data_white'][:,
+                                                    st_z:end_z, st_n:end_n].astype(in_dtype, copy=False)
+
+            item = {}
+            item['data'] = utils.downsample(data, self.args.binning)
             item['flat'] = utils.downsample(data_flat, self.args.binning)
             item['dark'] = utils.downsample(data_dark, self.args.binning)
+            item['id'] = id_z
             data_queue.put(item)
-        print(item.keys())
 
     def read_proj_chunk(self, data, st_proj, end_proj, st_z, end_z, st_n, end_n):
         """Read a chunk of projections with binning"""
@@ -149,14 +163,17 @@ class Reader():
     def read_flat_dark(self, st_n, end_n):
         """Read flat and dark"""
 
-        with h5py.File(self.args.flat_field_file_name) as fid:
+        with h5py.File(self.args.dark_file_name) as fid:
             dark = fid['/exchange/data_dark'][:,
                                               self.args.start_row:self.args.end_row, st_n:end_n]
+            dark = utils.downsample(dark, self.args.binning)
+
+        with h5py.File(self.args.flat_file_name) as fid:
             flat = fid['/exchange/data_white'][:,
                                                self.args.start_row:self.args.end_row, st_n:end_n]
             flat = utils.downsample(flat, self.args.binning)
-            dark = utils.downsample(dark, self.args.binning)
-            return flat, dark
+
+        return flat, dark
 
     def read_pairs(self, pairs, st_z, end_z, st_n, end_n):
         """Read projection pairs for automatic search of the rotation center. E.g. pairs=[0,1499] for the regular 180 deg dataset [1500,2048,2448]. """
